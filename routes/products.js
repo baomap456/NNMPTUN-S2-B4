@@ -2,6 +2,7 @@ var express = require('express');
 var router = express.Router();
 let {ConvertTitleToSlug} = require('../utils/titleHandler')
 let {getMaxID} = require('../utils/IdHandler')
+let {slugHandler} = require('../utils/slugHandler')
 let data = [
   {
     "id": 1,
@@ -1167,20 +1168,32 @@ let data = [
 router.get('/', function (req, res, next) {
   let queries = req.query;
   let titleQ = queries.title ? queries.title : '';
+  let slug = queries.slug ? queries.slug : '';
+  let rawPage = parseInt(queries.page);
+  let rawLimit = parseInt(queries.limit);
+  let page = (!isNaN(rawPage) && rawPage > 0) ? rawPage : 1;
+  let limit = (!isNaN(rawLimit) && rawLimit > 0) ? rawLimit : 10;
   let minPrice = queries.minPrice ? queries.minPrice : 0;
   let maxPrice = queries.maxPrice ? queries.maxPrice : 1E6;
-  let page = queries.page ? queries.page : 1;
-  let limit = queries.limit ? queries.limit : 10;
+  if (isNaN(minPrice)) minPrice = 0;
+  if (isNaN(maxPrice)) maxPrice = 1E6;
+  if (maxPrice < minPrice) {
+    return res.status(400).json({
+      error: "Tham số không hợp lệ: maxPrice phải lớn hơn hoặc bằng minPrice."
+    });
+  }
   console.log(queries);
   let result = data.filter(
     function (e) {
       return (!e.isDeleted) && e.title.includes(titleQ) &&
-        e.price >= minPrice && e.price <= maxPrice
+        e.price >= minPrice && e.price <= maxPrice && (slug == '' || e.slug == slug);
     }
   );
   result = result.splice(limit * (page - 1), limit)
   res.send(result);
 });
+
+
 //get by ID
 router.get('/:id', function (req, res, next) {
   let result = data.find(
@@ -1198,12 +1211,47 @@ router.get('/:id', function (req, res, next) {
 });
 
 
+
+
 router.post('/', function (req, res, next) {
+  const {title,slug,price,description,category,images} = req.body;
+
+  if (!title || title.trim() === '') {
+    return res.status(400).send({ error: "Title không được để trống" });
+  }
+
+  if(!description || description.trim() === '') {
+    return res.status(400).send({ error: "Description không được để trống" });
+  }
+
+  if(!slug || slug.trim() === '') {
+    return res.status(400).send({ error: "Slug không được để trống" });
+  }
+
+  if(!category) {
+    return res.status(400).send({ error: "Category không được để trống" });
+  }
+
+  if(!images || !Array.isArray(images) || images.length === 0) {
+    return res.status(400).send({ error: "Images không được để trống" });
+  }
+
+  if (price === undefined || price === null || price === '') {
+    return res.status(400).send({ error: "Price không được để trống" });
+  }
+
+  const numericPrice = Number(price);
+
+  if (isNaN(numericPrice) || numericPrice < 0) {
+    return res.status(400).send({ error: "Price phải là một số dương hợp lệ" });
+  }
+
+
   let newObj = {
     id: (getMaxID(data) + 1) + '',
     title: req.body.title,
-    slug: ConvertTitleToSlug(req.body.title),
-    price: req.body.price,
+    slug: slugHandler(ConvertTitleToSlug(req.body.title)),
+    price: numericPrice,
     description: req.body.description,
     category: req.body.category,
     images: req.body.images,
